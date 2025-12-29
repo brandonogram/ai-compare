@@ -1,5 +1,5 @@
 // api/query.js - Backend API handler for multi-AI queries
-// Updated December 2025 with latest models
+// v2.2 - Fixed ChatGPT and Gemini only
 
 const PROVIDERS = {
   chatgpt: {
@@ -9,13 +9,16 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'gpt-5.2',  // Latest: GPT-5.2 (Dec 2025)
+      // GPT-5.2 requires usage tier 5 ($1000+ lifetime spend)
+      // Using GPT-4o (best available without tier restrictions)
+      // User can upgrade to gpt-5.2 once they hit tier 5
+      model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
     }),
     extractResponse: (data) => data.choices[0].message.content,
     keyEnvVar: 'OPENAI_API_KEY',
-    modelName: 'GPT-5.2',
+    modelName: 'GPT-4o',
   },
 
   claude: {
@@ -26,7 +29,7 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'claude-opus-4-5-20251101',  // Latest: Claude Opus 4.5 (Nov 2025)
+      model: 'claude-opus-4-5-20251101',  // KEEPING - was working
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -36,8 +39,9 @@ const PROVIDERS = {
   },
 
   gemini: {
-    // Latest: Gemini 3 Pro (Nov 2025)
-    url: (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent?key=${apiKey}`,
+    // Gemini 3 Pro is not available via public API yet (preview only)
+    // Using Gemini 2.5 Pro - the best publicly available model
+    url: (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
     getHeaders: () => ({
       'Content-Type': 'application/json',
     }),
@@ -52,7 +56,7 @@ const PROVIDERS = {
     },
     useDynamicUrl: true,
     keyEnvVar: 'GOOGLE_API_KEY',
-    modelName: 'Gemini 3 Pro',
+    modelName: 'Gemini 2.5 Pro',
   },
 
   grok: {
@@ -62,7 +66,7 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'grok-4',  // Latest: Grok 4 (use grok-4-1-fast-reasoning for faster)
+      model: 'grok-4',  // KEEPING - was working
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
     }),
@@ -78,7 +82,7 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'sonar-pro',  // Latest: Sonar Pro with web search
+      model: 'sonar-pro',  // KEEPING - was working
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
     }),
@@ -104,7 +108,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unknown provider' });
   }
 
-  // Check if API key exists
   const apiKey = config.useDynamicUrl 
     ? process.env.GOOGLE_API_KEY 
     : process.env[config.keyEnvVar];
@@ -130,7 +133,6 @@ export default async function handler(req, res) {
       const errorData = await response.text();
       let errorMessage = `${config.modelName} error (${response.status})`;
       
-      // Parse common error messages
       try {
         const parsed = JSON.parse(errorData);
         if (parsed.error?.message) {
@@ -144,17 +146,16 @@ export default async function handler(req, res) {
         }
       }
 
-      // Add helpful hints based on status codes
       if (response.status === 401) {
         errorMessage = `Invalid API key for ${config.modelName}. Check your ${config.keyEnvVar} in Vercel.`;
       } else if (response.status === 403) {
         errorMessage = `Access denied for ${config.modelName}. Make sure billing is enabled.`;
       } else if (response.status === 429) {
-        errorMessage = `Rate limited by ${config.modelName}. Wait a moment or check your usage limits.`;
+        errorMessage = `Rate limited by ${config.modelName}. Wait a moment.`;
       } else if (response.status === 402) {
-        errorMessage = `Payment required for ${config.modelName}. Add a payment method to your account.`;
+        errorMessage = `Payment required for ${config.modelName}. Add credits.`;
       } else if (response.status === 404) {
-        errorMessage = `Model not found. ${config.modelName} may require special access or the model ID changed.`;
+        errorMessage = `Model not found: ${config.modelName}`;
       }
 
       console.error(`${provider} error:`, errorData);
