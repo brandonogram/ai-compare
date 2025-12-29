@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 
 const AI_PROVIDERS = [
-  { id: 'chatgpt', name: 'ChatGPT', model: 'GPT-5.2', color: '#10a37f', icon: '◯' },
+  { id: 'chatgpt', name: 'ChatGPT', model: 'GPT-4o', color: '#10a37f', icon: '◯' },
   { id: 'claude', name: 'Claude', model: 'Opus 4.5', color: '#d97706', icon: '◈' },
-  { id: 'gemini', name: 'Gemini', model: '3 Pro', color: '#4285f4', icon: '◇' },
+  { id: 'gemini', name: 'Gemini', model: '2.5 Pro', color: '#4285f4', icon: '◇' },
   { id: 'grok', name: 'Grok', model: '4', color: '#1d9bf0', icon: '✕' },
   { id: 'perplexity', name: 'Perplexity', model: 'Sonar Pro', color: '#22c55e', icon: '◎' },
 ];
@@ -18,7 +18,6 @@ export default function AICompare() {
 
   const successfulResponses = AI_PROVIDERS.filter((p) => responses[p.id]);
 
-  // Generate summary when all responses are in
   useEffect(() => {
     const anyLoading = Object.values(loading).some(Boolean);
     if (!anyLoading && successfulResponses.length >= 2 && !summary && !summaryLoading) {
@@ -67,7 +66,6 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
 
-    // Reset states
     setResponses({});
     setError({});
     setSummary('');
@@ -75,7 +73,6 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
       AI_PROVIDERS.reduce((acc, p) => ({ ...acc, [p.id]: true }), {})
     );
 
-    // Fire all requests in parallel
     AI_PROVIDERS.forEach(async (provider) => {
       try {
         const res = await fetch('/api/query', {
@@ -112,16 +109,14 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-6">
           <h1 className="text-2xl md:text-3xl font-bold mb-2">AI Compare</h1>
           <p className="text-gray-400">One prompt. Five AI responses. Side by side.</p>
           <p className="text-gray-500 text-xs mt-1">
-            GPT-5.2 • Claude Opus 4.5 • Gemini 3 Pro • Grok 4 • Sonar Pro
+            GPT-4o • Claude Opus 4.5 • Gemini 2.5 Pro • Grok 4 • Sonar Pro
           </p>
         </div>
 
-        {/* Prompt Input */}
         <div className="mb-6">
           <div className="relative">
             <textarea
@@ -146,7 +141,6 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
           <p className="text-gray-500 text-sm mt-2">Press ⌘+Enter to submit</p>
         </div>
 
-        {/* Summary Section */}
         {(summary || summaryLoading) && (
           <div className="mb-6 p-4 bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-800/50 rounded-xl">
             <div className="flex items-center gap-2 mb-3">
@@ -164,14 +158,12 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
           </div>
         )}
 
-        {/* Response Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {AI_PROVIDERS.map((provider) => (
             <div
               key={provider.id}
               className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col"
             >
-              {/* Provider Header */}
               <div
                 className="px-4 py-3 border-b border-gray-800 flex items-center gap-2"
                 style={{ borderTopColor: provider.color, borderTopWidth: '3px' }}
@@ -199,7 +191,6 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
                 )}
               </div>
 
-              {/* Response Body */}
               <div className="p-4 flex-1 min-h-[200px] max-h-[500px] overflow-y-auto">
                 {loading[provider.id] && (
                   <div className="text-gray-500 animate-pulse">Thinking...</div>
@@ -223,7 +214,6 @@ Be concise and actionable. Don't list each AI separately - synthesize the inform
           ))}
         </div>
 
-        {/* Footer */}
         <div className="text-center mt-6 text-gray-500 text-sm">
           Responses generated in parallel • API costs apply per provider
         </div>
