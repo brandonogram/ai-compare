@@ -1,14 +1,5 @@
 // api/query.js - Backend API handler for multi-AI queries
-// Works with Next.js API routes, Vercel serverless, or Express
-
-// ============================================================
-// SETUP: Add your API keys to environment variables
-// ============================================================
-// OPENAI_API_KEY=sk-...
-// ANTHROPIC_API_KEY=sk-ant-...
-// GOOGLE_API_KEY=...
-// XAI_API_KEY=...
-// PERPLEXITY_API_KEY=pplx-...
+// Updated December 2025 with latest models
 
 const PROVIDERS = {
   chatgpt: {
@@ -18,11 +9,13 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',  // Latest: GPT-5.2 (Dec 2025)
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
     }),
     extractResponse: (data) => data.choices[0].message.content,
+    keyEnvVar: 'OPENAI_API_KEY',
+    modelName: 'GPT-5.2',
   },
 
   claude: {
@@ -33,23 +26,33 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-opus-4-5-20251101',  // Latest: Claude Opus 4.5 (Nov 2025)
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     }),
     extractResponse: (data) => data.content[0].text,
+    keyEnvVar: 'ANTHROPIC_API_KEY',
+    modelName: 'Claude Opus 4.5',
   },
 
   gemini: {
-    url: (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    // Latest: Gemini 3 Pro (Nov 2025)
+    url: (apiKey) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent?key=${apiKey}`,
     getHeaders: () => ({
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
       contents: [{ parts: [{ text: prompt }] }],
     }),
-    extractResponse: (data) => data.candidates[0].content.parts[0].text,
+    extractResponse: (data) => {
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        return data.candidates[0].content.parts[0].text;
+      }
+      throw new Error('Unexpected Gemini response format');
+    },
     useDynamicUrl: true,
+    keyEnvVar: 'GOOGLE_API_KEY',
+    modelName: 'Gemini 3 Pro',
   },
 
   grok: {
@@ -59,11 +62,13 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'grok-3',
+      model: 'grok-4',  // Latest: Grok 4 (use grok-4-1-fast-reasoning for faster)
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
     }),
     extractResponse: (data) => data.choices[0].message.content,
+    keyEnvVar: 'XAI_API_KEY',
+    modelName: 'Grok 4',
   },
 
   perplexity: {
@@ -73,17 +78,16 @@ const PROVIDERS = {
       'Content-Type': 'application/json',
     }),
     getBody: (prompt) => ({
-      model: 'sonar-pro',
+      model: 'sonar-pro',  // Latest: Sonar Pro with web search
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
     }),
     extractResponse: (data) => data.choices[0].message.content,
+    keyEnvVar: 'PERPLEXITY_API_KEY',
+    modelName: 'Sonar Pro',
   },
 };
 
-// ============================================================
-// API Handler (Next.js / Vercel format)
-// ============================================================
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -100,6 +104,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unknown provider' });
   }
 
+  // Check if API key exists
+  const apiKey = config.useDynamicUrl 
+    ? process.env.GOOGLE_API_KEY 
+    : process.env[config.keyEnvVar];
+  
+  if (!apiKey) {
+    return res.status(500).json({ 
+      error: `Missing API key: ${config.keyEnvVar}. Add it in Vercel Environment Variables.` 
+    });
+  }
+
   try {
     const url = config.useDynamicUrl 
       ? config.url(process.env.GOOGLE_API_KEY) 
@@ -112,63 +127,46 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`${provider} error:`, errorText);
-      throw new Error(`${provider} API returned ${response.status}`);
+      const errorData = await response.text();
+      let errorMessage = `${config.modelName} error (${response.status})`;
+      
+      // Parse common error messages
+      try {
+        const parsed = JSON.parse(errorData);
+        if (parsed.error?.message) {
+          errorMessage = parsed.error.message;
+        } else if (parsed.message) {
+          errorMessage = parsed.message;
+        }
+      } catch (e) {
+        if (errorData.length < 200) {
+          errorMessage = errorData;
+        }
+      }
+
+      // Add helpful hints based on status codes
+      if (response.status === 401) {
+        errorMessage = `Invalid API key for ${config.modelName}. Check your ${config.keyEnvVar} in Vercel.`;
+      } else if (response.status === 403) {
+        errorMessage = `Access denied for ${config.modelName}. Make sure billing is enabled.`;
+      } else if (response.status === 429) {
+        errorMessage = `Rate limited by ${config.modelName}. Wait a moment or check your usage limits.`;
+      } else if (response.status === 402) {
+        errorMessage = `Payment required for ${config.modelName}. Add a payment method to your account.`;
+      } else if (response.status === 404) {
+        errorMessage = `Model not found. ${config.modelName} may require special access or the model ID changed.`;
+      }
+
+      console.error(`${provider} error:`, errorData);
+      return res.status(response.status).json({ error: errorMessage });
     }
 
     const data = await response.json();
     const text = config.extractResponse(data);
 
-    return res.status(200).json({ response: text });
+    return res.status(200).json({ response: text, model: config.modelName });
   } catch (error) {
     console.error(`Error with ${provider}:`, error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: `${config.modelName}: ${error.message}` });
   }
-}
-
-// ============================================================
-// Express.js version (alternative)
-// ============================================================
-/*
-const express = require('express');
-const router = express.Router();
-
-router.post('/query', async (req, res) => {
-  // Same logic as handler above
-});
-
-module.exports = router;
-*/
-
-// ============================================================
-// Query all providers at once (optional batch endpoint)
-// ============================================================
-export async function queryAll(prompt) {
-  const results = await Promise.allSettled(
-    Object.entries(PROVIDERS).map(async ([name, config]) => {
-      const url = config.useDynamicUrl 
-        ? config.url(process.env.GOOGLE_API_KEY) 
-        : config.url;
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: config.getHeaders(),
-        body: JSON.stringify(config.getBody(prompt)),
-      });
-
-      if (!response.ok) throw new Error(`${name} failed`);
-
-      const data = await response.json();
-      return { provider: name, response: config.extractResponse(data) };
-    })
-  );
-
-  return results.map((result, i) => {
-    const name = Object.keys(PROVIDERS)[i];
-    if (result.status === 'fulfilled') {
-      return result.value;
-    }
-    return { provider: name, error: result.reason.message };
-  });
 }
